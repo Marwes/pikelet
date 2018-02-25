@@ -26,6 +26,7 @@ required-features = ["cli"]
 codespan = { git = "https://github.com/brendanzab/codespan", rev = "a7f34e8", version = "0.1.0" }
 codespan-reporting = { git = "https://github.com/brendanzab/codespan", rev = "a7f34e8", version = "0.1.0" }
 failure = "0.1.1"
+gen-iter = "0.1.2"
 lalrpop-util = "0.14.0"
 lazy_static = "1.0"
 pretty = "0.3.2"

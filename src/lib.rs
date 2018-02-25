@@ -1,7 +1,10 @@
+#![feature(generators, generator_trait, conservative_impl_trait)]
+
 extern crate codespan;
 extern crate codespan_reporting;
 #[macro_use]
 extern crate failure;
+extern crate gen_iter;
 extern crate lalrpop_util;
 #[macro_use]
 extern crate lazy_static;

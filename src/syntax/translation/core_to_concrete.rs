@@ -70,7 +70,7 @@ impl ToConcrete<concrete::Term> for core::RcTerm {
             },
             core::Term::Pi(_, ref pi) => {
                 let (param, body) = pi.clone().unbind();
-                if body.free_vars().contains(&param.name) {
+                if body.free_vars().any(|name| name == &param.name) {
                     // use name if it is present, and not used in the current scope
                     // otherwise create a pretty name
                     // add the used name to the environment
