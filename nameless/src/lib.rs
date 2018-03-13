@@ -36,8 +36,6 @@
 //! - The Penn Locally Nameless Metatheory Library
 //!     - [Github](https://github.com/plclub/metalib)
 
-#[macro_use]
-extern crate lazy_static;
 #[cfg(feature = "nameless-derive")]
 #[allow(unused_imports)]
 #[macro_use]
@@ -50,23 +48,20 @@ use std::rc::Rc;
 pub use nameless_derive::*;
 
 mod debruijn;
-mod gen_id;
+mod fresh;
 mod named;
 mod scope;
 mod var;
 
 pub use self::debruijn::Debruijn;
-pub use self::gen_id::GenId;
+pub use self::fresh::{FreshState, GenId};
 pub use self::named::Named;
 pub use self::scope::{Scope, unbind2};
 pub use self::var::Var;
 
 /// Free names
 pub trait FreeName: Clone + PartialEq {
-    fn fresh() -> Self;
-
-    /// Generate a new, globally unique name
-    fn freshen(&mut self);
+    fn freshen(&mut self, &mut FreshState);
 }
 
 /// Types that may be compared for alpha equality

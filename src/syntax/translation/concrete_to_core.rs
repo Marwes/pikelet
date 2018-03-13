@@ -1,12 +1,12 @@
 use codespan::ByteSpan;
-use nameless::{FreeName, Named, Scope, Var};
+use nameless::{FreshState, Named, Scope, Var};
 
 use syntax::concrete;
 use syntax::core;
 
 /// Translate something to the corresponding core representation
 pub trait ToCore<T> {
-    fn to_core(&self) -> T;
+    fn to_core(&self, fresh: &mut FreshState) -> T;
 }
 
 /// Convert a sugary pi type from something like:
@@ -21,12 +21,13 @@ pub trait ToCore<T> {
 /// (a : t1) -> (b : t1) -> t3
 /// ```
 fn pi_to_core(
+    fresh: &mut FreshState,
     param_names: &[(ByteSpan, String)],
     ann: &concrete::Term,
     body: &concrete::Term,
 ) -> core::RcRawTerm {
-    let ann = ann.to_core();
-    let mut term = body.to_core();
+    let ann = ann.to_core(fresh);
+    let mut term = body.to_core(fresh);
 
     for &(span, ref name) in param_names.iter().rev() {
         // This could be wrong... :/
@@ -56,10 +57,11 @@ fn pi_to_core(
 /// \(a : t1) => \(b : t1) => \c => \(d : t2) => t3
 /// ```
 fn lam_to_core(
+    fresh: &mut FreshState,
     params: &[(Vec<(ByteSpan, String)>, Option<Box<concrete::Term>>)],
     body: &concrete::Term,
 ) -> core::RcRawTerm {
-    let mut term = body.to_core();
+    let mut term = body.to_core(fresh);
 
     for &(ref names, ref ann) in params.iter().rev() {
         for &(span, ref name) in names.iter().rev() {
@@ -69,7 +71,7 @@ fn lam_to_core(
             };
             let ann = match *ann {
                 None => core::RawTerm::Hole(core::SourceMeta::default()).into(),
-                Some(ref ann) => ann.to_core(),
+                Some(ref ann) => ann.to_core(fresh),
             };
             term = core::RawTerm::Lam(meta, Scope::bind(Named::new(name, ann), term)).into();
         }
@@ -80,7 +82,7 @@ fn lam_to_core(
 
 impl ToCore<core::RawModule> for concrete::Module {
     /// Convert the module in the concrete syntax to a module in the core syntax
-    fn to_core(&self) -> core::RawModule {
+    fn to_core(&self, fresh: &mut FreshState) -> core::RawModule {
         match *self {
             concrete::Module::Valid {
                 ref name,
@@ -106,7 +108,7 @@ impl ToCore<core::RawModule> for concrete::Module {
                                 let term = core::RawTerm::Hole(core::SourceMeta::default()).into();
                                 definitions.push(core::RawDefinition { name, term, ann });
                             },
-                            None => prev_claim = Some((name.clone(), ann.to_core())),
+                            None => prev_claim = Some((name.clone(), ann.to_core(fresh))),
                         },
                         concrete::Declaration::Definition {
                             name: (_, ref name),
@@ -120,14 +122,14 @@ impl ToCore<core::RawModule> for concrete::Module {
                                 None => definitions.push(core::RawDefinition {
                                     name: name.clone(),
                                     ann: core::RawTerm::Hole(default_meta).into(),
-                                    term: lam_to_core(params, body),
+                                    term: lam_to_core(fresh, params, body),
                                 }),
                                 Some((claim_name, ann)) => {
                                     if claim_name == *name {
                                         definitions.push(core::RawDefinition {
                                             name: name.clone(),
                                             ann,
-                                            term: lam_to_core(params, body),
+                                            term: lam_to_core(fresh, params, body),
                                         });
                                     } else {
                                         definitions.push(core::RawDefinition {
@@ -138,7 +140,7 @@ impl ToCore<core::RawModule> for concrete::Module {
                                         definitions.push(core::RawDefinition {
                                             name: name.clone(),
                                             ann: core::RawTerm::Hole(default_meta).into(),
-                                            term: lam_to_core(params, body),
+                                            term: lam_to_core(fresh, params, body),
                                         });
                                     }
                                 },
@@ -160,13 +162,13 @@ impl ToCore<core::RawModule> for concrete::Module {
 
 impl ToCore<core::RcRawTerm> for concrete::Term {
     /// Convert a term in the concrete syntax into a core term
-    fn to_core(&self) -> core::RcRawTerm {
+    fn to_core(&self, fresh: &mut FreshState) -> core::RcRawTerm {
         let meta = core::SourceMeta { span: self.span() };
         match *self {
-            concrete::Term::Parens(_, ref term) => term.to_core(),
+            concrete::Term::Parens(_, ref term) => term.to_core(fresh),
             concrete::Term::Ann(ref expr, ref ty) => {
-                let expr = expr.to_core().into();
-                let ty = ty.to_core().into();
+                let expr = expr.to_core(fresh).into();
+                let ty = ty.to_core(fresh).into();
 
                 core::RawTerm::Ann(meta, expr, ty).into()
             },
@@ -179,18 +181,20 @@ impl ToCore<core::RcRawTerm> for concrete::Term {
 
                 core::RawTerm::Var(meta, var).into()
             },
-            concrete::Term::Pi(_, (ref names, ref ann), ref body) => pi_to_core(names, ann, body),
-            concrete::Term::Lam(_, ref params, ref body) => lam_to_core(params, body),
+            concrete::Term::Pi(_, (ref names, ref ann), ref body) => {
+                pi_to_core(fresh, names, ann, body)
+            },
+            concrete::Term::Lam(_, ref params, ref body) => lam_to_core(fresh, params, body),
             concrete::Term::Arrow(ref ann, ref body) => {
-                let name = core::Name::fresh();
-                let ann = ann.to_core();
-                let body = body.to_core();
+                let name = core::Name::from(fresh.next_gen());
+                let ann = ann.to_core(fresh);
+                let body = body.to_core(fresh);
 
                 core::RawTerm::Pi(meta, Scope::bind(Named::new(name, ann), body)).into()
             },
             concrete::Term::App(ref fn_expr, ref arg) => {
-                let fn_expr = fn_expr.to_core();
-                let arg = arg.to_core();
+                let fn_expr = fn_expr.to_core(fresh);
+                let arg = arg.to_core(fresh);
 
                 core::RawTerm::App(meta, fn_expr, arg).into()
             },
@@ -208,14 +212,14 @@ mod to_core {
 
     use super::*;
 
-    fn parse(src: &str) -> core::RcRawTerm {
+    fn parse(fresh: &mut FreshState, src: &str) -> core::RcRawTerm {
         let mut codemap = CodeMap::new();
         let filemap = codemap.add_filemap(FileName::virtual_("test"), src.into());
 
         let (concrete_term, errors) = parse::term(&filemap);
         assert!(errors.is_empty());
 
-        concrete_term.to_core()
+        concrete_term.to_core(fresh)
     }
 
     mod module {
@@ -224,12 +228,13 @@ mod to_core {
         #[test]
         fn parse_prelude() {
             let mut codemap = CodeMap::new();
+            let mut fresh = FreshState::new();
             let filemap = codemap.add_filemap(FileName::virtual_("test"), library::PRELUDE.into());
 
             let (concrete_module, errors) = parse::module(&filemap);
             assert!(errors.is_empty());
 
-            concrete_module.to_core();
+            concrete_module.to_core(&mut fresh);
         }
     }
 
@@ -240,40 +245,50 @@ mod to_core {
 
         #[test]
         fn var() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"x"),
+                parse(&mut fresh, r"x"),
                 RawTerm::Var(SourceMeta::default(), Var::Free(Name::user("x"))).into()
             );
         }
 
         #[test]
         fn var_kebab_case() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"or-elim"),
+                parse(&mut fresh, r"or-elim"),
                 RawTerm::Var(SourceMeta::default(), Var::Free(Name::user("or-elim"))).into(),
             );
         }
 
         #[test]
         fn ty() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"Type"),
+                parse(&mut fresh, r"Type"),
                 RawTerm::Universe(SourceMeta::default(), Level::ZERO).into()
             );
         }
 
         #[test]
         fn ty_level() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"Type 2"),
+                parse(&mut fresh, r"Type 2"),
                 RawTerm::Universe(SourceMeta::default(), Level::ZERO.succ().succ()).into()
             );
         }
 
         #[test]
         fn ann() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"Type : Type"),
+                parse(&mut fresh, r"Type : Type"),
                 RawTerm::Ann(
                     SourceMeta::default(),
                     RawTerm::Universe(SourceMeta::default(), Level::ZERO).into(),
@@ -284,8 +299,10 @@ mod to_core {
 
         #[test]
         fn ann_ann_left() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"Type : Type : Type"),
+                parse(&mut fresh, r"Type : Type : Type"),
                 RawTerm::Ann(
                     SourceMeta::default(),
                     RawTerm::Universe(SourceMeta::default(), Level::ZERO).into(),
@@ -300,8 +317,10 @@ mod to_core {
 
         #[test]
         fn ann_ann_right() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"Type : (Type : Type)"),
+                parse(&mut fresh, r"Type : (Type : Type)"),
                 RawTerm::Ann(
                     SourceMeta::default(),
                     RawTerm::Universe(SourceMeta::default(), Level::ZERO).into(),
@@ -316,8 +335,10 @@ mod to_core {
 
         #[test]
         fn ann_ann_ann() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"(Type : Type) : (Type : Type)"),
+                parse(&mut fresh, r"(Type : Type) : (Type : Type)"),
                 RawTerm::Ann(
                     SourceMeta::default(),
                     RawTerm::Ann(
@@ -336,10 +357,12 @@ mod to_core {
 
         #[test]
         fn lam_ann() {
+            let mut fresh = FreshState::new();
+
             let x = Name::user("x");
 
             assert_alpha_eq!(
-                parse(r"\x : Type -> Type => x"),
+                parse(&mut fresh, r"\x : Type -> Type => x"),
                 RawTerm::Lam(
                     SourceMeta::default(),
                     Scope::bind(
@@ -365,11 +388,13 @@ mod to_core {
 
         #[test]
         fn lam() {
+            let mut fresh = FreshState::new();
+
             let x = Name::user("x");
             let y = Name::user("y");
 
             assert_alpha_eq!(
-                parse(r"\x : (\y => y) => x"),
+                parse(&mut fresh, r"\x : (\y => y) => x"),
                 RawTerm::Lam(
                     SourceMeta::default(),
                     Scope::bind(
@@ -394,11 +419,13 @@ mod to_core {
 
         #[test]
         fn lam_lam_ann() {
+            let mut fresh = FreshState::new();
+
             let x = Name::user("x");
             let y = Name::user("y");
 
             assert_alpha_eq!(
-                parse(r"\(x y : Type) => x"),
+                parse(&mut fresh, r"\(x y : Type) => x"),
                 RawTerm::Lam(
                     SourceMeta::default(),
                     Scope::bind(
@@ -423,8 +450,10 @@ mod to_core {
 
         #[test]
         fn arrow() {
+            let mut fresh = FreshState::new();
+
             assert_alpha_eq!(
-                parse(r"Type -> Type"),
+                parse(&mut fresh, r"Type -> Type"),
                 RawTerm::Pi(
                     SourceMeta::default(),
                     Scope::bind(
@@ -440,10 +469,12 @@ mod to_core {
 
         #[test]
         fn pi() {
+            let mut fresh = FreshState::new();
+
             let x = Name::user("x");
 
             assert_alpha_eq!(
-                parse(r"(x : Type -> Type) -> x"),
+                parse(&mut fresh, r"(x : Type -> Type) -> x"),
                 RawTerm::Pi(
                     SourceMeta::default(),
                     Scope::bind(
@@ -469,11 +500,13 @@ mod to_core {
 
         #[test]
         fn pi_pi() {
+            let mut fresh = FreshState::new();
+
             let x = Name::user("x");
             let y = Name::user("y");
 
             assert_alpha_eq!(
-                parse(r"(x y : Type) -> x"),
+                parse(&mut fresh, r"(x y : Type) -> x"),
                 RawTerm::Pi(
                     SourceMeta::default(),
                     Scope::bind(
@@ -498,10 +531,12 @@ mod to_core {
 
         #[test]
         fn pi_arrow() {
+            let mut fresh = FreshState::new();
+
             let x = Name::user("x");
 
             assert_alpha_eq!(
-                parse(r"(x : Type) -> x -> x"),
+                parse(&mut fresh, r"(x : Type) -> x -> x"),
                 RawTerm::Pi(
                     SourceMeta::default(),
                     Scope::bind(
@@ -527,11 +562,13 @@ mod to_core {
 
         #[test]
         fn lam_app() {
+            let mut fresh = FreshState::new();
+
             let x = Name::user("x");
             let y = Name::user("y");
 
             assert_alpha_eq!(
-                parse(r"\(x : Type -> Type) (y : Type) => x y"),
+                parse(&mut fresh, r"\(x : Type -> Type) (y : Type) => x y"),
                 RawTerm::Lam(
                     SourceMeta::default(),
                     Scope::bind(
@@ -570,11 +607,13 @@ mod to_core {
 
         #[test]
         fn id() {
+            let mut fresh = FreshState::new();
+
             let x = Name::user("x");
             let a = Name::user("a");
 
             assert_alpha_eq!(
-                parse(r"\(a : Type) (x : a) => x"),
+                parse(&mut fresh, r"\(a : Type) (x : a) => x"),
                 RawTerm::Lam(
                     SourceMeta::default(),
                     Scope::bind(
@@ -599,10 +638,12 @@ mod to_core {
 
         #[test]
         fn id_ty() {
+            let mut fresh = FreshState::new();
+
             let a = Name::user("a");
 
             assert_alpha_eq!(
-                parse(r"(a : Type) -> a -> a"),
+                parse(&mut fresh, r"(a : Type) -> a -> a"),
                 RawTerm::Pi(
                     SourceMeta::default(),
                     Scope::bind(
@@ -631,33 +672,44 @@ mod to_core {
 
             #[test]
             fn lam_args() {
+                let mut fresh = FreshState::new();
+
                 assert_alpha_eq!(
-                    parse(r"\x (y : Type) z => x"),
-                    parse(r"\x => \y : Type => \z => x"),
+                    parse(&mut fresh, r"\x (y : Type) z => x"),
+                    parse(&mut fresh, r"\x => \y : Type => \z => x"),
                 );
             }
 
             #[test]
             fn lam_args_multi() {
+                let mut fresh = FreshState::new();
+
                 assert_alpha_eq!(
-                    parse(r"\(x : Type) (y : Type) z => x"),
-                    parse(r"\(x y : Type) z => x"),
+                    parse(&mut fresh, r"\(x : Type) (y : Type) z => x"),
+                    parse(&mut fresh, r"\(x y : Type) z => x"),
                 );
             }
 
             #[test]
             fn pi_args() {
+                let mut fresh = FreshState::new();
+
                 assert_alpha_eq!(
-                    parse(r"(a : Type) -> (x y z : a) -> x"),
-                    parse(r"(a : Type) -> (x : a) -> (y : a) -> (z : a) -> x"),
+                    parse(&mut fresh, r"(a : Type) -> (x y z : a) -> x"),
+                    parse(
+                        &mut fresh,
+                        r"(a : Type) -> (x : a) -> (y : a) -> (z : a) -> x"
+                    ),
                 );
             }
 
             #[test]
             fn arrow() {
+                let mut fresh = FreshState::new();
+
                 assert_alpha_eq!(
-                    parse(r"(a : Type) -> a -> a"),
-                    parse(r"(a : Type) -> (x : a) -> a"),
+                    parse(&mut fresh, r"(a : Type) -> a -> a"),
+                    parse(&mut fresh, r"(a : Type) -> (x : a) -> a"),
                 )
             }
         }

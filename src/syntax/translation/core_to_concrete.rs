@@ -1,5 +1,5 @@
 use codespan::ByteSpan;
-use nameless::Var;
+use nameless::{FreshState, Var};
 
 use syntax::concrete;
 use syntax::core;
@@ -19,11 +19,11 @@ impl Default for Env {
 
 /// Translate something to the corresponding concrete representation
 pub trait ToConcrete<T> {
-    fn to_concrete(&self, env: &Env) -> T;
+    fn to_concrete(&self, fresh: &mut FreshState, env: &Env) -> T;
 }
 
 impl ToConcrete<concrete::Module> for core::RawModule {
-    fn to_concrete(&self, env: &Env) -> concrete::Module {
+    fn to_concrete(&self, fresh: &mut FreshState, env: &Env) -> concrete::Module {
         use std::iter;
 
         let declarations = self.definitions
@@ -34,13 +34,13 @@ impl ToConcrete<concrete::Module> for core::RawModule {
                 // build up the type claim
                 let new_ann = concrete::Declaration::Claim {
                     name: name.clone(),
-                    ann: definition.ann.to_concrete(env),
+                    ann: definition.ann.to_concrete(fresh, env),
                 };
 
                 // build up the concrete definition
                 let new_definition = {
                     // pull lambda arguments from the body into the definition
-                    let (params, body) = match definition.term.to_concrete(env) {
+                    let (params, body) = match definition.term.to_concrete(fresh, env) {
                         concrete::Term::Lam(_, params, body) => (params, *body),
                         body => (vec![], body),
                     };
@@ -60,7 +60,7 @@ impl ToConcrete<concrete::Module> for core::RawModule {
 }
 
 impl ToConcrete<Option<u32>> for core::Level {
-    fn to_concrete(&self, _env: &Env) -> Option<u32> {
+    fn to_concrete(&self, _fresh: &mut FreshState, _env: &Env) -> Option<u32> {
         match *self {
             core::Level(0) => None,
             core::Level(level) => Some(level),
@@ -69,15 +69,15 @@ impl ToConcrete<Option<u32>> for core::Level {
 }
 
 impl ToConcrete<concrete::Term> for core::RcRawTerm {
-    fn to_concrete(&self, env: &Env) -> concrete::Term {
+    fn to_concrete(&self, fresh: &mut FreshState, env: &Env) -> concrete::Term {
         // FIXME: add concrete::Term::Paren where needed
         match *self.inner {
             core::RawTerm::Ann(_, ref term, ref ty) => concrete::Term::Ann(
-                Box::new(term.to_concrete(env)),
-                Box::new(ty.to_concrete(env)),
+                Box::new(term.to_concrete(fresh, env)),
+                Box::new(ty.to_concrete(fresh, env)),
             ),
             core::RawTerm::Universe(meta, level) => {
-                concrete::Term::Universe(meta.span, level.to_concrete(env))
+                concrete::Term::Universe(meta.span, level.to_concrete(fresh, env))
             },
             core::RawTerm::Hole(meta) => concrete::Term::Hole(meta.span),
             core::RawTerm::Var(meta, Var::Free(core::Name::User(ref name))) => {
@@ -93,14 +93,14 @@ impl ToConcrete<concrete::Term> for core::RcRawTerm {
                 panic!("Tried to convert a term that was not locally closed");
             },
             core::RawTerm::Pi(_, ref pi) => {
-                let (param, body) = pi.clone().unbind();
+                let (param, body) = pi.clone().unbind(fresh);
                 if body.free_vars().contains(&param.name) {
                     // use name if it is present, and not used in the current scope
                     // otherwise create a pretty name
                     // add the used name to the environment
                     // convert the body using the new environment
 
-                    // // match body.to_concrete(env) {
+                    // // match body.to_concrete(fresh, env) {
                     //     // check if the body can be collapsed to form a 'sugary' pi
                     //     concrete::Term::Pi(_, params, body) => unimplemented!(),
                     //     body => concrete::Term::Pi(ByteSpan::default(), vec![param], body),
@@ -110,19 +110,19 @@ impl ToConcrete<concrete::Term> for core::RcRawTerm {
                 } else {
                     // The body is not dependent on the parameter - so let's use an arrow instead!
                     concrete::Term::Arrow(
-                        Box::new(param.inner.to_concrete(env)),
-                        Box::new(body.to_concrete(env)),
+                        Box::new(param.inner.to_concrete(fresh, env)),
+                        Box::new(body.to_concrete(fresh, env)),
                     )
                 }
             },
             core::RawTerm::Lam(_, ref lam) => {
-                let (_param, _body) = lam.clone().unbind();
+                let (_param, _body) = lam.clone().unbind(fresh);
                 // use name if it is present, and not used in the current scope
                 // otherwise create a pretty name
                 // add the used name to the environment
 
                 // // convert the body using the new environment
-                // match body.to_concrete(env) {
+                // match body.to_concrete(fresh, env) {
                 //     // check if the body can be collapsed to form a 'sugary' lambda
                 //     concrete::Term::Lam(_, params, body) => unimplemented!(),
                 //     body => concrete::Term::Lam(ByteSpan::default(), vec![param], body),
@@ -131,8 +131,8 @@ impl ToConcrete<concrete::Term> for core::RcRawTerm {
                 unimplemented!()
             },
             core::RawTerm::App(_, ref fn_term, ref arg) => concrete::Term::Ann(
-                Box::new(fn_term.to_concrete(env)),
-                Box::new(arg.to_concrete(env)),
+                Box::new(fn_term.to_concrete(fresh, env)),
+                Box::new(arg.to_concrete(fresh, env)),
             ),
         }
     }

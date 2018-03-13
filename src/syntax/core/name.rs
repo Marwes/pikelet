@@ -1,4 +1,4 @@
-use nameless::{AlphaEq, FreeName, GenId, Named};
+use nameless::{AlphaEq, FreeName, FreshState, GenId, Named};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -52,15 +52,17 @@ impl Name {
 }
 
 impl FreeName for Name {
-    fn fresh() -> Name {
-        Name::Gen(Named::new(None, GenId::fresh()))
-    }
-
-    fn freshen(&mut self) {
+    fn freshen(&mut self, gen: &mut FreshState) {
         *self = match *self {
-            Name::User(ref name) => Name::Gen(Named::new(Some(name.clone()), GenId::fresh())),
+            Name::User(ref name) => Name::Gen(Named::new(Some(name.clone()), gen.next_gen())),
             Name::Gen(_) => return,
         };
+    }
+}
+
+impl From<GenId> for Name {
+    fn from(src: GenId) -> Name {
+        Name::Gen(Named::new(None, src))
     }
 }
 

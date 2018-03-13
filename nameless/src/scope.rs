@@ -1,4 +1,4 @@
-use {AlphaEq, Debruijn, FreeName, LocallyNameless, Named};
+use {AlphaEq, Debruijn, FreeName, FreshState, LocallyNameless, Named};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scope<B, T> {
@@ -20,11 +20,11 @@ where
         }
     }
 
-    pub fn unbind(self) -> (Named<N, B>, T) {
+    pub fn unbind(self, gen: &mut FreshState) -> (Named<N, B>, T) {
         let mut binder = self.unsafe_binder;
         let mut body = self.unsafe_body;
 
-        binder.name.freshen();
+        binder.name.freshen(gen);
         body.open(&binder.name);
 
         (binder, body)
@@ -57,6 +57,7 @@ where
 }
 
 pub fn unbind2<N, B1, T1, B2, T2>(
+    gen: &mut FreshState,
     scope1: Scope<Named<N, B1>, T1>,
     scope2: Scope<Named<N, B2>, T2>,
 ) -> (Named<N, B1>, T1, Named<N, B2>, T2)
@@ -72,7 +73,7 @@ where
     let mut scope2_binder = scope2.unsafe_binder;
     let mut scope2_body = scope2.unsafe_body;
 
-    scope1_binder.name.freshen();
+    scope1_binder.name.freshen(gen);
     scope1_body.open(&scope1_binder.name);
     scope2_body.open(&scope1_binder.name);
     scope2_binder.name = scope1_binder.name.clone();

@@ -31,10 +31,11 @@ pub mod cli;
 
 use codespan::{CodeMap, FileMap, FileName};
 use codespan_reporting::Diagnostic;
+use nameless::FreshState;
 
 use syntax::core::Module;
 
-pub fn load_file(file: &FileMap) -> Result<Module, Vec<Diagnostic>> {
+pub fn load_file(fresh: &mut FreshState, file: &FileMap) -> Result<Module, Vec<Diagnostic>> {
     use syntax::translation::ToCore;
 
     let mut diagnostics = Vec::new();
@@ -42,8 +43,8 @@ pub fn load_file(file: &FileMap) -> Result<Module, Vec<Diagnostic>> {
     let (module, errors) = syntax::parse::module(&file);
     diagnostics.extend(errors.iter().map(|err| err.to_diagnostic()));
 
-    let module = module.to_core();
-    match semantics::check_module(&module) {
+    let module = module.to_core(fresh);
+    match semantics::check_module(fresh, &module) {
         Ok(module) => Ok(module),
         Err(err) => {
             diagnostics.push(err.to_diagnostic());
@@ -52,13 +53,13 @@ pub fn load_file(file: &FileMap) -> Result<Module, Vec<Diagnostic>> {
     }
 }
 
-pub fn load_prelude(codemap: &mut CodeMap) -> Module {
+pub fn load_prelude(fresh: &mut FreshState, codemap: &mut CodeMap) -> Module {
     let file = codemap.add_filemap(
         FileName::real("library/prelude.pi"),
         String::from(library::PRELUDE),
     );
 
-    match load_file(&file) {
+    match load_file(fresh, &file) {
         Ok(module) => module,
         Err(diagnostics) => {
             for diagnostic in diagnostics {

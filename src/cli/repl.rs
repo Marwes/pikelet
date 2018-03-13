@@ -1,10 +1,11 @@
 //! The REPL (Read-Eval-Print-Loop)
 
-use failure::Error;
-use rustyline::error::ReadlineError;
-use rustyline::Editor;
 use codespan::{CodeMap, FileMap, FileName};
 use codespan_reporting;
+use failure::Error;
+use nameless::FreshState;
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 use std::path::PathBuf;
 use term_size;
 
@@ -53,6 +54,7 @@ pub fn run(opts: Opts) -> Result<(), Error> {
 
     let mut rl = Editor::<()>::new();
     let mut codemap = CodeMap::new();
+    let mut fresh = FreshState::new();
 
     if let Some(ref history_file) = opts.history_file {
         rl.load_history(&history_file)?;
@@ -77,7 +79,7 @@ pub fn run(opts: Opts) -> Result<(), Error> {
                 }
 
                 let filename = FileName::virtual_("repl");
-                match eval_print(&codemap.add_filemap(filename, line)) {
+                match eval_print(&mut fresh, &codemap.add_filemap(filename, line)) {
                     Ok(ControlFlow::Continue) => {},
                     Ok(ControlFlow::Break) => break,
                     Err(EvalPrintError::Parse(errs)) => for err in errs {
@@ -108,11 +110,11 @@ pub fn run(opts: Opts) -> Result<(), Error> {
     Ok(())
 }
 
-fn eval_print(filemap: &FileMap) -> Result<ControlFlow, EvalPrintError> {
+fn eval_print(fresh: &mut FreshState, filemap: &FileMap) -> Result<ControlFlow, EvalPrintError> {
     use std::usize;
 
     use syntax::concrete::ReplCommand;
-    use syntax::core::{Context, RcTerm, SourceMeta, Term};
+    use syntax::core::{Context, SourceMeta, Term};
     use syntax::translation::ToCore;
 
     fn term_width() -> usize {
@@ -132,25 +134,25 @@ fn eval_print(filemap: &FileMap) -> Result<ControlFlow, EvalPrintError> {
         },
 
         ReplCommand::Eval(parse_term) => {
-            let raw_term = parse_term.to_core();
+            let raw_term = parse_term.to_core(fresh);
             let context = Context::new();
-            let (term, inferred) = semantics::infer(&context, &raw_term)?;
-            let evaluated = semantics::normalize(&context, &term)?;
+            let (term, inferred) = semantics::infer(fresh, &context, &raw_term)?;
+            let evaluated = semantics::normalize(fresh, &context, &term)?;
 
             println!(
                 "{term:width$}",
                 term = Term::Ann(
                     SourceMeta::default(),
-                    RcTerm::from(&evaluated),
-                    RcTerm::from(&inferred),
+                    evaluated.quote(fresh),
+                    inferred.quote(fresh),
                 ),
                 width = term_width(),
             );
         },
         ReplCommand::TypeOf(parse_term) => {
-            let raw_term = parse_term.to_core();
+            let raw_term = parse_term.to_core(fresh);
             let context = Context::new();
-            let (_, inferred) = semantics::infer(&context, &raw_term)?;
+            let (_, inferred) = semantics::infer(fresh, &context, &raw_term)?;
 
             println!("{term:width$}", term = inferred, width = term_width());
         },

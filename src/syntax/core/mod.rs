@@ -1,7 +1,7 @@
 //! The core syntax of the language
 
 use codespan::ByteSpan;
-use nameless::{AlphaEq, Debruijn, LocallyNameless, Named, Scope, Var};
+use nameless::{AlphaEq, Debruijn, FreshState, LocallyNameless, Named, Scope, Var};
 use rpds::List;
 use std::collections::HashSet;
 use std::fmt;
@@ -279,6 +279,31 @@ pub enum Value {
     Neutral(RcNeutral), // 4.
 }
 
+impl RcValue {
+    pub fn quote(&self, fresh: &mut FreshState) -> RcTerm {
+        let meta = SourceMeta::default();
+
+        match *self.inner {
+            Value::Universe(level) => Term::Universe(meta, level).into(),
+            Value::Lam(ref lam) => {
+                let (param, body) = lam.clone().unbind(fresh);
+                let param = Named::new(param.name.clone(), param.inner.quote(fresh));
+                let body = body.quote(fresh);
+
+                Term::Lam(meta, Scope::bind(param, body)).into()
+            },
+            Value::Pi(ref pi) => {
+                let (param, body) = pi.clone().unbind(fresh);
+                let param = Named::new(param.name.clone(), param.inner.quote(fresh));
+                let body = body.quote(fresh);
+
+                Term::Pi(meta, Scope::bind(param, body)).into()
+            },
+            Value::Neutral(ref n) => n.quote(fresh),
+        }
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.to_doc(pretty::Options::default().with_debug_indices(f.alternate()))
@@ -302,6 +327,19 @@ pub enum Neutral {
     Var(Var<Name, Debruijn>), // 1.
     /// RawTerm application
     App(RcNeutral, RcTerm), // 2.
+}
+
+impl RcNeutral {
+    pub fn quote(&self, fresh: &mut FreshState) -> RcTerm {
+        let meta = SourceMeta::default();
+
+        match *self.inner {
+            Neutral::Var(ref var) => Term::Var(meta, var.clone()).into(),
+            Neutral::App(ref fn_expr, ref arg_expr) => {
+                Term::App(meta, fn_expr.quote(fresh), arg_expr.clone()).into()
+            },
+        }
+    }
 }
 
 impl fmt::Display for Neutral {
@@ -328,42 +366,6 @@ pub type RcType = RcValue;
 impl From<Neutral> for RcValue {
     fn from(src: Neutral) -> RcValue {
         Value::Neutral(src.into()).into()
-    }
-}
-
-impl<'a> From<&'a RcValue> for RcTerm {
-    fn from(src: &'a RcValue) -> RcTerm {
-        let meta = SourceMeta::default();
-
-        match *src.inner {
-            Value::Universe(level) => Term::Universe(meta, level).into(),
-            Value::Lam(ref lam) => {
-                let (param, body) = lam.clone().unbind();
-                let param = Named::new(param.name.clone(), RcTerm::from(&param.inner));
-
-                Term::Lam(meta, Scope::bind(param, RcTerm::from(&body))).into()
-            },
-            Value::Pi(ref pi) => {
-                let (param, body) = pi.clone().unbind();
-                let param = Named::new(param.name.clone(), RcTerm::from(&param.inner));
-
-                Term::Pi(meta, Scope::bind(param, RcTerm::from(&body))).into()
-            },
-            Value::Neutral(ref n) => RcTerm::from(n),
-        }
-    }
-}
-
-impl<'a> From<&'a RcNeutral> for RcTerm {
-    fn from(src: &'a RcNeutral) -> RcTerm {
-        let meta = SourceMeta::default();
-
-        match *src.inner {
-            Neutral::Var(ref var) => Term::Var(meta, var.clone()).into(),
-            Neutral::App(ref fn_expr, ref arg_expr) => {
-                Term::App(meta, RcTerm::from(fn_expr), arg_expr.clone()).into()
-            },
-        }
     }
 }
 
