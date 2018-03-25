@@ -148,6 +148,13 @@ PiTerm: Term = {
     <start: @L> <binder: AppTerm> "->" <body: LamTerm> <end: @R> =>? {
         reparse_pi_type_hack(ByteSpan::new(start, end), binder, body)
     },
+    <start: @L> "{" <ident: Ident+> ":" <binder: PiTerm> "}" "->" <body: LamTerm> <end: @R> =>? {
+        unimplemented!("implicit arguments")
+    },
+    // TODO: "{{" and "}}" tokens?
+    <start: @L> "{" "{" <ident: Ident+> ":" <binder: PiTerm> "}" "}" "->" <body: LamTerm> <end: @R> =>? {
+        unimplemented!("instance arguments")
+    },
 };
 
 AppTerm: Term = {
@@ -179,7 +186,10 @@ AtomicTerm: Term = {
 
 AtomicLamParam: (Vec<(ByteSpan, String)>, Option<Box<Term>>) = {
     <name: ByteSpannedIdent> => (vec![name], None),
-    "(" <names: ByteSpannedIdent+> ":" <ann: PiTerm> ")" => (names, Some(Box::new(ann))),
+    "(" <names: ByteSpannedIdent+> <ann: (":" <PiTerm>)?> ")" => (names, ann.map(Box::new)),
+    "{" <names: ByteSpannedIdent+> <ann: (":" <PiTerm>)?> "}" => unimplemented!("implicit arguments"),
+    // TODO: "{{" and "}}" tokens?
+    "{" "{" <names: ByteSpannedIdent+> <ann: (":" <PiTerm>)?> "}" "}" => unimplemented!("instance arguments"),
 };
 
 ByteSpannedIdent: (ByteSpan, String) = {
