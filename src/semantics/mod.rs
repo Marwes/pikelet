@@ -20,7 +20,7 @@ pub fn check_module(module: &RawModule) -> Result<Module, TypeError> {
 
     for definition in &module.definitions {
         let name = definition.name.clone();
-        let (term, ann) = match *definition.ann {
+        let (elab_term, ann) = match *definition.ann {
             // We don't have a type annotation available to us! Instead we will
             // attempt to infer it based on the body of the definition
             RawTerm::Hole(_) => infer(&context, &definition.term)?,
@@ -34,8 +34,12 @@ pub fn check_module(module: &RawModule) -> Result<Module, TypeError> {
             },
         };
 
+        // Normalize the term a little...
+        let value = normalize(&context, &elab_term)?;
+        let term = Rc::new(Term::from(&*value));
+
         // Add the definition to the context
-        context = context.extend_let(Name::user(name.clone()), ann.clone(), term.clone());
+        context = context.extend_let(Name::user(name.clone()), ann.clone(), value);
 
         definitions.push(Definition { name, term, ann })
     }
@@ -65,8 +69,8 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
                     Ok(Rc::new(Value::from(Neutral::Var(var.clone()))))
                 },
 
-                // E-VAR-DEF)
-                Some(&Binder::Let { ref value, .. }) => normalize(context, value),
+                // E-VAR-DEF
+                Some(&Binder::Let { ref value, .. }) => Ok(value.clone()),
 
                 None => Err(InternalError::UndefinedName {
                     var_span: term.span(),
@@ -115,7 +119,8 @@ pub fn normalize(context: &Context, term: &Rc<Term>) -> Result<Rc<Value>, Intern
                     // FIXME: do a local unbind here
                     let ((name, Embed(param_ann)), body) = nameless::unbind(scope.clone());
 
-                    let body_context = context.extend_let(name, param_ann, arg.clone());
+                    let arg_value = normalize(&context, arg)?;
+                    let body_context = context.extend_let(name, param_ann, arg_value);
                     normalize(&body_context, &Rc::new(Term::from(&*body)))
                 },
                 Value::Neutral(ref fn_expr) => Ok(Rc::new(Value::from(Neutral::App(
@@ -349,8 +354,8 @@ pub fn infer(context: &Context, term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<Type
 
             let (lam_ann, _) = infer_universe(context, &param_ann)?;
             let pi_ann = normalize(context, &lam_ann)?;
-            let body_ctx = context.extend_lam(name.clone(), pi_ann.clone());
-            let (lam_body, pi_body) = infer(&body_ctx, &body)?;
+            let body_context = context.extend_lam(name.clone(), pi_ann.clone());
+            let (lam_body, pi_body) = infer(&body_context, &body)?;
 
             let lam_param = (name.clone(), Embed(lam_ann));
             let pi_param = (name.clone(), Embed(pi_ann));
@@ -370,10 +375,9 @@ pub fn infer(context: &Context, term: &Rc<RawTerm>) -> Result<(Rc<Term>, Rc<Type
                     let ((name, Embed(param_ann)), body) = nameless::unbind(scope.clone());
 
                     let arg_expr = check(context, arg_expr, &param_ann)?;
-                    let body = normalize(
-                        &context.extend_let(name, param_ann, arg_expr.clone()),
-                        &Rc::new(Term::from(&*body)),
-                    )?;
+                    let arg_value = normalize(context, &arg_expr)?;
+                    let body_context = context.extend_let(name, param_ann, arg_value);
+                    let body = normalize(&body_context, &Rc::new(Term::from(&*body)))?;
 
                     Ok((Rc::new(Term::App(meta, elab_fn_expr, arg_expr)), body))
                 },

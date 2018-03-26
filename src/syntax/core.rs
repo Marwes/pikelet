@@ -442,7 +442,7 @@ pub enum Binder {
     Let {
         name: Name,
         ann: Rc<Type>,
-        value: Rc<Term>,
+        value: Rc<Value>,
     }, // 3.
 }
 
@@ -495,7 +495,7 @@ impl Context {
         self.extend(Binder::Pi { name, ann })
     }
 
-    pub fn extend_let(&self, name: Name, ann: Rc<Type>, value: Rc<Term>) -> Context {
+    pub fn extend_let(&self, name: Name, ann: Rc<Type>, value: Rc<Value>) -> Context {
         self.extend(Binder::Let { name, ann, value })
     }
 
@@ -510,62 +510,62 @@ impl Default for Context {
             .extend_let(
                 Name::user("String"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::StringType)),
+                Rc::new(Value::Constant(Constant::StringType)),
             )
             .extend_let(
                 Name::user("Char"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::CharType)),
+                Rc::new(Value::Constant(Constant::CharType)),
             )
             .extend_let(
                 Name::user("U8"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::U8Type)),
+                Rc::new(Value::Constant(Constant::U8Type)),
             )
             .extend_let(
                 Name::user("U16"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::U16Type)),
+                Rc::new(Value::Constant(Constant::U16Type)),
             )
             .extend_let(
                 Name::user("U32"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::U32Type)),
+                Rc::new(Value::Constant(Constant::U32Type)),
             )
             .extend_let(
                 Name::user("U64"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::U64Type)),
+                Rc::new(Value::Constant(Constant::U64Type)),
             )
             .extend_let(
                 Name::user("I8"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::I8Type)),
+                Rc::new(Value::Constant(Constant::I8Type)),
             )
             .extend_let(
                 Name::user("I16"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::I16Type)),
+                Rc::new(Value::Constant(Constant::I16Type)),
             )
             .extend_let(
                 Name::user("I32"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::I32Type)),
+                Rc::new(Value::Constant(Constant::I32Type)),
             )
             .extend_let(
                 Name::user("I64"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::I64Type)),
+                Rc::new(Value::Constant(Constant::I64Type)),
             )
             .extend_let(
                 Name::user("F32"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::F32Type)),
+                Rc::new(Value::Constant(Constant::F32Type)),
             )
             .extend_let(
                 Name::user("F64"),
                 Rc::new(Value::Universe(Level(0))),
-                Rc::new(Term::Constant(SourceMeta::default(), Constant::F64Type)),
+                Rc::new(Value::Constant(Constant::F64Type)),
             )
     }
 }
