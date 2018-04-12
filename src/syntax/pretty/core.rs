@@ -6,31 +6,25 @@ use pretty::Doc;
 use syntax::core::{Constant, Context, Level, Neutral, RawConstant, RawDefinition, RawModule,
                    RawTerm, Term, Value};
 
-use super::{parens_if, Options, Prec, StaticDoc, ToDoc};
+use super::{Options, StaticDoc, ToDoc};
 
 fn pretty_ann<E: ToDoc, T: ToDoc>(options: Options, expr: &E, ty: &T) -> StaticDoc {
-    parens_if(
-        Prec::ANN < options.prec,
-        Doc::group(
-            expr.to_doc(options.with_prec(Prec::LAM))
-                .append(Doc::space())
-                .append(Doc::text(":")),
-        ).append(Doc::group(
-            Doc::space()
-                .append(ty.to_doc(options.with_prec(Prec::ANN)))
-                .nest(options.indent_width as usize),
-        )),
-    )
+    Doc::group(
+        expr.to_doc(options)
+            .append(Doc::space())
+            .append(Doc::text(":")),
+    ).append(Doc::group(
+        Doc::space()
+            .append(ty.to_doc(options))
+            .nest(options.indent_width as usize),
+    ))
 }
 
-fn pretty_universe(options: Options, level: Level) -> StaticDoc {
+fn pretty_universe(level: Level) -> StaticDoc {
     if level == Level(0) {
         Doc::text("Type")
     } else {
-        parens_if(
-            Prec::APP < options.prec,
-            Doc::text(format!("Type {}", level)),
-        )
+        Doc::text(format!("(Type {})", level))
     }
 }
 
@@ -55,57 +49,48 @@ fn pretty_lam<A: ToDoc, B: ToDoc>(
     ann: Option<&A>,
     body: &B,
 ) -> StaticDoc {
-    parens_if(
-        Prec::LAM < options.prec,
-        Doc::group(
-            Doc::text(r"\")
-                .append(Doc::as_string(name))
-                .append(match ann.as_ref() {
-                    Some(ann) => Doc::space()
-                        .append(Doc::text(":"))
-                        .append(Doc::space())
-                        .append(ann.to_doc(options.with_prec(Prec::PI)).group()),
-                    None => Doc::nil(),
-                })
-                .append(Doc::space())
-                .append(Doc::text("=>")),
-        ).append(Doc::group(
-            Doc::space()
-                .append(body.to_doc(options.with_prec(Prec::NO_WRAP)))
-                .nest(options.indent_width as usize),
-        )),
-    )
+    Doc::group(
+        Doc::text(r"\")
+            .append(Doc::as_string(name))
+            .append(match ann.as_ref() {
+                Some(ann) => Doc::space()
+                    .append(Doc::text(":"))
+                    .append(Doc::space())
+                    .append(ann.to_doc(options).group()),
+                None => Doc::nil(),
+            })
+            .append(Doc::space())
+            .append(Doc::text("=>")),
+    ).append(Doc::group(
+        Doc::space()
+            .append(body.to_doc(options))
+            .nest(options.indent_width as usize),
+    ))
 }
 
 fn pretty_pi<A: ToDoc, B: ToDoc>(options: Options, name: &Name, ann: &A, body: &B) -> StaticDoc {
-    parens_if(
-        Prec::PI < options.prec,
-        Doc::group(
-            Doc::text("(")
-                .append(Doc::as_string(name))
-                .append(Doc::space())
-                .append(Doc::text(":"))
-                .append(Doc::space())
-                .append(ann.to_doc(options.with_prec(Prec::PI)))
-                .append(Doc::text(")"))
-                .append(Doc::space())
-                .append(Doc::text("->")),
-        ).append(Doc::group(
-            Doc::space()
-                .append(body.to_doc(options.with_prec(Prec::NO_WRAP)))
-                .nest(options.indent_width as usize),
-        )),
-    )
+    Doc::group(
+        Doc::text("(")
+            .append(Doc::as_string(name))
+            .append(Doc::space())
+            .append(Doc::text(":"))
+            .append(Doc::space())
+            .append(ann.to_doc(options))
+            .append(Doc::text(")"))
+            .append(Doc::space())
+            .append(Doc::text("->")),
+    ).append(Doc::group(
+        Doc::space()
+            .append(body.to_doc(options))
+            .nest(options.indent_width as usize),
+    ))
 }
 
 fn pretty_app<F: ToDoc, A: ToDoc>(options: Options, fn_term: &F, arg_term: &A) -> StaticDoc {
-    parens_if(
-        Prec::APP < options.prec,
-        Doc::nil()
-            .append(fn_term.to_doc(options.with_prec(Prec::APP)))
-            .append(Doc::space())
-            .append(arg_term.to_doc(options.with_prec(Prec::APP))),
-    )
+    Doc::nil()
+        .append(fn_term.to_doc(options))
+        .append(Doc::space())
+        .append(arg_term.to_doc(options))
 }
 
 impl ToDoc for RawConstant {
@@ -154,7 +139,7 @@ impl ToDoc for RawTerm {
     fn to_doc(&self, options: Options) -> StaticDoc {
         match *self {
             RawTerm::Ann(_, ref expr, ref ty) => pretty_ann(options, expr, ty),
-            RawTerm::Universe(_, level) => pretty_universe(options, level),
+            RawTerm::Universe(_, level) => pretty_universe(level),
             RawTerm::Hole(_) => Doc::text("_"),
             RawTerm::Constant(_, ref c) => c.to_doc(options),
             RawTerm::Var(_, ref var) => pretty_var(options, var),
@@ -182,7 +167,7 @@ impl ToDoc for Term {
     fn to_doc(&self, options: Options) -> StaticDoc {
         match *self {
             Term::Ann(_, ref expr, ref ty) => pretty_ann(options, expr, ty),
-            Term::Universe(_, level) => pretty_universe(options, level),
+            Term::Universe(_, level) => pretty_universe(level),
             Term::Constant(_, ref c) => c.to_doc(options),
             Term::Var(_, ref var) => pretty_var(options, var),
             Term::Lam(_, ref scope) => pretty_lam(
@@ -205,7 +190,7 @@ impl ToDoc for Term {
 impl ToDoc for Value {
     fn to_doc(&self, options: Options) -> StaticDoc {
         match *self {
-            Value::Universe(level) => pretty_universe(options, level),
+            Value::Universe(level) => pretty_universe(level),
             Value::Constant(ref c) => c.to_doc(options),
             Value::Lam(ref scope) => pretty_lam(
                 options,
@@ -245,7 +230,7 @@ impl ToDoc for Context {
                             Doc::space()
                                 .append(Doc::text(":"))
                                 .append(Doc::space())
-                                .append(ty.to_doc(options.with_prec(Prec::PI)).group()),
+                                .append(ty.to_doc(options).group()),
                         ),
                     ),
                     ContextEntry::Definition(ref name, ref term) => Doc::group(
@@ -253,7 +238,7 @@ impl ToDoc for Context {
                             Doc::space()
                                 .append(Doc::text("="))
                                 .append(Doc::space())
-                                .append(term.to_doc(options.with_prec(Prec::PI)).group()),
+                                .append(term.to_doc(options).group()),
                         ),
                     ),
                 }),
@@ -272,7 +257,7 @@ impl ToDoc for RawDefinition {
                     .append(Doc::space())
                     .append(Doc::text(":"))
                     .append(Doc::space())
-                    .append(ann.to_doc(options.with_prec(Prec::NO_WRAP)))
+                    .append(ann.to_doc(options))
                     .append(Doc::text(";")),
             ).append(Doc::newline()),
         }.append(Doc::group(
@@ -280,7 +265,7 @@ impl ToDoc for RawDefinition {
                 .append(Doc::space())
                 .append(Doc::text("="))
                 .append(Doc::space())
-                .append(self.term.to_doc(options.with_prec(Prec::NO_WRAP)))
+                .append(self.term.to_doc(options))
                 .append(Doc::text(";")),
         ))
     }
@@ -298,7 +283,7 @@ impl ToDoc for RawModule {
             .append(Doc::intersperse(
                 self.definitions
                     .iter()
-                    .map(|definition| definition.to_doc(options.with_prec(Prec::NO_WRAP))),
+                    .map(|definition| definition.to_doc(options)),
                 Doc::newline().append(Doc::newline()),
             ))
     }
